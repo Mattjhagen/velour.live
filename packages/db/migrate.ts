@@ -11,9 +11,10 @@ export async function runMigrations(): Promise<void> {
   const client = postgres(url, { max: 1 });
   const db = drizzle(client);
 
-  await migrate(db, {
-    migrationsFolder: path.join(__dirname, "migrations"),
-  });
+  const migrationsFolder =
+    process.env.MIGRATIONS_PATH ?? path.join(process.cwd(), "migrations");
+
+  await migrate(db, { migrationsFolder });
 
   await client.end();
 }
