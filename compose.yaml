@@ -56,7 +56,7 @@ services:
     image: caddy:2-alpine
     ports:
       - "80:80"
-      - "443:443"
+      # 443 added in Step 4 when wildcard TLS is configured
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
