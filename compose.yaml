@@ -80,10 +80,7 @@ services:
 
   caddy:
     image: caddy:2-alpine
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+    # No host ports needed — cloudflared reaches Caddy via Docker network
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
@@ -94,6 +91,15 @@ services:
       - ingress
     depends_on:
       - dashboard
+    restart: unless-stopped
+
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN:?set CLOUDFLARE_TUNNEL_TOKEN in .env}
+    networks:
+      - ingress
+    depends_on:
+      - caddy
     restart: unless-stopped
 
 networks:
