@@ -1,0 +1,22 @@
+{
+  "name": "worker",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@velour/db": "workspace:*",
+    "dockerode": "^4.0.2",
+    "drizzle-orm": "^0.33.0",
+    "ioredis": "^5.4.1",
+    "postgres": "^3.4.4",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "@types/dockerode": "^3.3.29",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  }
+}

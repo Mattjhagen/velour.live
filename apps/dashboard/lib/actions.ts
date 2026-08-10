@@ -3,6 +3,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getRedis } from "@/lib/redis";
 import { projects, domains, deployments, environmentVariables } from "@velour/db";
 import { eq, and } from "drizzle-orm";
 import { redirect } from "next/navigation";
@@ -153,14 +154,43 @@ export async function removeDomain(slug: string, domainId: string): Promise<void
 
 // ── Deployments ───────────────────────────────────────────────────────────
 
+export async function updateBuildSettings(
+  slug: string,
+  _prev: { error?: string } | null,
+  formData: FormData,
+): Promise<{ error?: string }> {
+  const userId = await requireUser();
+  const project = await requireProject(slug, userId);
+
+  const repoUrl = (formData.get("repoUrl") as string | null)?.trim() ?? "";
+  const buildCommand =
+    (formData.get("buildCommand") as string | null)?.trim() || "npm install && npm run build";
+  const outputDir = (formData.get("outputDir") as string | null)?.trim() || "dist";
+
+  if (repoUrl && !repoUrl.startsWith("https://") && !repoUrl.startsWith("git@")) {
+    return { error: "Repository URL must start with https:// or git@" };
+  }
+
+  await getDb()
+    .update(projects)
+    .set({ repoUrl: repoUrl || null, buildCommand, outputDir, updatedAt: new Date() })
+    .where(eq(projects.id, project.id));
+
+  revalidatePath(`/projects/${slug}/settings`);
+  return {};
+}
+
 export async function triggerDeployment(slug: string): Promise<void> {
   const userId = await requireUser();
   const project = await requireProject(slug, userId);
-  await getDb().insert(deployments).values({
-    projectId: project.id,
-    commitSha: "manual",
-    state: "queued",
-  });
+
+  const db = getDb();
+  const [created] = await db
+    .insert(deployments)
+    .values({ projectId: project.id, commitSha: "manual", state: "queued" })
+    .returning({ id: deployments.id });
+
+  await getRedis().rpush("velour:deploy:queue", JSON.stringify({ deploymentId: created.id }));
   revalidatePath(`/projects/${slug}`);
 }
 

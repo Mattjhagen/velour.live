@@ -55,6 +55,28 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-velour}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-velour}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      ARTIFACTS_PATH: /var/lib/velour/artifacts
+    volumes:
+      # Docker socket — worker control plane only; never granted to user workloads
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Artifact storage: fixed host path, not user-controllable
+      - /var/lib/velour/artifacts:/var/lib/velour/artifacts
+    networks:
+      - control-plane
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   caddy:
     image: caddy:2-alpine
     ports:
@@ -74,6 +96,7 @@ networks:
   control-plane:
     internal: true
   ingress:
+  # build-net is created per-deployment by the worker; not a compose network
 
 volumes:
   postgres-data:

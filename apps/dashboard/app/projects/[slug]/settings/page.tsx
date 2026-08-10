@@ -4,8 +4,9 @@ import { redirect } from "next/navigation";
 import { getDb } from "@/lib/db";
 import { projects } from "@velour/db";
 import { eq, and } from "drizzle-orm";
-import { renameProject, deleteProject } from "@/lib/actions";
+import { renameProject, deleteProject, updateBuildSettings } from "@/lib/actions";
 import { RenameForm } from "@/components/RenameForm";
+import { BuildSettingsForm } from "@/components/BuildSettingsForm";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -26,6 +27,7 @@ export default async function SettingsPage({ params }: Props) {
   if (!project) redirect("/projects");
 
   const renameAction = renameProject.bind(null, slug);
+  const buildAction = updateBuildSettings.bind(null, slug);
   const deleteAction = deleteProject.bind(null, slug);
 
   return (
@@ -34,6 +36,22 @@ export default async function SettingsPage({ params }: Props) {
       <div className="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm">
         <h2 className="mb-4 font-medium text-zinc-900">Project name</h2>
         <RenameForm action={renameAction} currentName={project.name} />
+      </div>
+
+      {/* Build settings */}
+      <div className="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm">
+        <h2 className="mb-1 font-medium text-zinc-900">Build settings</h2>
+        <p className="mb-4 text-sm text-zinc-500">
+          Configure the repository and build for deployments.
+        </p>
+        <BuildSettingsForm
+          action={buildAction}
+          current={{
+            repoUrl: project.repoUrl ?? "",
+            buildCommand: project.buildCommand,
+            outputDir: project.outputDir,
+          }}
+        />
       </div>
 
       {/* Project info */}

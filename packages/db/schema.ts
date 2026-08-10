@@ -31,6 +31,9 @@ export const projects = pgTable("projects", {
   userId: uuid("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   slug: text("slug").notNull().unique(),
+  repoUrl: text("repo_url"),
+  buildCommand: text("build_command").notNull().default("npm install && npm run build"),
+  outputDir: text("output_dir").notNull().default("dist"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });

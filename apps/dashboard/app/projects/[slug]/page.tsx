@@ -1,6 +1,7 @@
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { getDb } from "@/lib/db";
 import { projects, deployments } from "@velour/db";
 import { eq, and, desc } from "drizzle-orm";
@@ -79,7 +80,12 @@ export default async function DeploymentsPage({ params }: Props) {
                 return (
                   <tr key={d.id} className="hover:bg-zinc-50">
                     <td className="px-4 py-3 font-mono text-xs text-zinc-700">
-                      {d.commitSha.slice(0, 7)}
+                      <Link
+                        href={`/projects/${slug}/deployments/${d.id}`}
+                        className="hover:text-violet-600 hover:underline"
+                      >
+                        {d.commitSha.slice(0, 7)}
+                      </Link>
                     </td>
                     <td className="px-4 py-3">
                       <Badge state={d.state} />
