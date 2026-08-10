@@ -3,7 +3,8 @@
   "version": "0.0.1",
   "private": true,
   "exports": {
-    ".": "./index.ts"
+    ".": "./index.ts",
+    "./migrate": "./migrate.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.33.0",
