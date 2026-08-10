@@ -33,6 +33,7 @@ baseline. Application packages will be added in the first implementation
 milestone.
 
 - `docs/implementation-plan.md` — sequenced build plan and acceptance criteria
+- `docs/claude-code/` — eight small, ordered Claude Code implementation prompts
 - `CLAUDE.md` — instructions for Claude Code contributors
 - `compose.yaml` — local Postgres, Redis, and Caddy foundation
 - `infra/caddy/Caddyfile` — development ingress placeholder
