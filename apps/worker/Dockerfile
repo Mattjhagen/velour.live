@@ -6,4 +6,4 @@ COPY apps/worker/package.json ./apps/worker/
 COPY packages/db/package.json ./packages/db/
 RUN pnpm install --no-frozen-lockfile
 COPY . .
-CMD ["pnpm", "--filter", "worker", "start"]
+CMD ["node_modules/.bin/tsx", "apps/worker/src/index.ts"]
