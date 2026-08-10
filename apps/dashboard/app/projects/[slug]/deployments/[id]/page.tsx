@@ -6,6 +6,7 @@ import { projects, deployments, buildLogs } from "@velour/db";
 import { eq, and, asc } from "drizzle-orm";
 import { Badge } from "@/components/Badge";
 import { LogStream } from "@/components/LogStream";
+import { StaticLogView } from "@/components/StaticLogView";
 
 interface Props {
   params: Promise<{ slug: string; id: string }>;
@@ -77,29 +78,7 @@ export default async function DeploymentDetailPage({ params }: Props) {
       </div>
 
       {isTerminal ? (
-        <div className="rounded-lg border border-zinc-200 bg-zinc-950 font-mono text-xs text-zinc-300">
-          <div className="border-b border-zinc-800 px-4 py-2 text-zinc-500">Build log</div>
-          <div className="max-h-[480px] overflow-y-auto p-4 leading-5">
-            {existingLogs.length === 0 ? (
-              <span className="text-zinc-600">No log output.</span>
-            ) : (
-              existingLogs.map((l) => (
-                <div
-                  key={l.id}
-                  className={
-                    l.line.startsWith("ERROR") || l.line.startsWith("FAILED")
-                      ? "text-red-400"
-                      : l.line.startsWith("===")
-                        ? "font-semibold text-violet-400"
-                        : ""
-                  }
-                >
-                  {l.line}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
+        <StaticLogView lines={existingLogs.map((l) => l.line)} />
       ) : (
         <LogStream deploymentId={id} />
       )}

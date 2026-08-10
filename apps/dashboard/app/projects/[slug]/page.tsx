@@ -79,12 +79,17 @@ export default async function DeploymentsPage({ params }: Props) {
                 const rollback = rollbackDeployment.bind(null, slug, d.id);
                 return (
                   <tr key={d.id} className="hover:bg-zinc-50">
-                    <td className="px-4 py-3 font-mono text-xs text-zinc-700">
+                    <td className="px-4 py-3">
                       <Link
                         href={`/projects/${slug}/deployments/${d.id}`}
-                        className="hover:text-violet-600 hover:underline"
+                        className="flex items-center gap-2 group"
                       >
-                        {d.commitSha.slice(0, 7)}
+                        <span className="font-mono text-xs text-zinc-700 group-hover:text-violet-600">
+                          {d.commitSha.slice(0, 7)}
+                        </span>
+                        <span className="rounded border border-zinc-200 px-1.5 py-0.5 text-xs text-zinc-400 group-hover:border-violet-300 group-hover:text-violet-600 transition-colors">
+                          Logs →
+                        </span>
                       </Link>
                     </td>
                     <td className="px-4 py-3">
