@@ -24,7 +24,6 @@ RUN addgroup --system --gid 1001 nodejs \
 
 COPY --from=builder /app/apps/dashboard/.next/standalone ./
 COPY --from=builder /app/apps/dashboard/.next/static ./apps/dashboard/.next/static
-COPY --from=builder /app/apps/dashboard/public ./apps/dashboard/public 2>/dev/null || true
 
 USER nextjs
 EXPOSE 3000
