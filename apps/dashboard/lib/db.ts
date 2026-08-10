@@ -1,16 +1,25 @@
 import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) throw new Error("DATABASE_URL is not set");
+// Client is created lazily so the build step never needs DATABASE_URL.
+let _client: ReturnType<typeof postgres> | null = null;
 
-// Single shared pool — Next.js may hot-reload in dev so we limit connections.
-const client = postgres(connectionString, { max: 5 });
+function getClient(): ReturnType<typeof postgres> {
+  if (!_client) {
+    const url = process.env.DATABASE_URL;
+    if (!url) throw new Error("DATABASE_URL is not set");
+    _client = postgres(url, { max: 5 });
+  }
+  return _client;
+}
 
-export const db = drizzle(client);
+export function getDb() {
+  return drizzle(getClient());
+}
 
 export async function pingDb(): Promise<boolean> {
   try {
+    const client = getClient();
     await client`SELECT 1`;
     return true;
   } catch {
