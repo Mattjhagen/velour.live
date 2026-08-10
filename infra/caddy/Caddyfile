@@ -1,7 +1,10 @@
+# Development Caddyfile — auto_https is off, HTTP only on localhost.
+# Production configuration (wildcard TLS, velour.live) is added in Step 4.
 {
   auto_https off
 }
 
 :80 {
-  respond "Velour ingress is online" 200
+  # Proxy all traffic to the dashboard container on the ingress network.
+  reverse_proxy dashboard:3000
 }

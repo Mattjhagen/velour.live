@@ -1,0 +1,16 @@
+{
+  "name": "@velour/db",
+  "version": "0.0.1",
+  "private": true,
+  "exports": {
+    ".": "./index.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.33.0",
+    "postgres": "^3.4.4"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.24.0",
+    "typescript": "^5.5.0"
+  }
+}

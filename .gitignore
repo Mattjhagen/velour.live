@@ -1,6 +1,11 @@
 .env
+.env.*
+!.env.example
 .DS_Store
 node_modules/
 .next/
 coverage/
 *.log
+*.tsbuildinfo
+next-env.d.ts
+pnpm-lock.yaml
