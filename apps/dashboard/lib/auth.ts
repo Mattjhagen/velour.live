@@ -1,9 +1,6 @@
 import type { NextAuthOptions } from "next-auth";
 import GithubProvider from "next-auth/providers/github";
 
-const adminEmail = process.env.VELOUR_ADMIN_EMAIL;
-if (!adminEmail) throw new Error("VELOUR_ADMIN_EMAIL is not set");
-
 export const authOptions: NextAuthOptions = {
   providers: [
     GithubProvider({
@@ -13,7 +10,9 @@ export const authOptions: NextAuthOptions = {
   ],
   callbacks: {
     async signIn({ user }) {
-      // Only the configured admin email may sign in.
+      const adminEmail = process.env.VELOUR_ADMIN_EMAIL;
+      // Deny all sign-ins if admin email is not configured.
+      if (!adminEmail) return false;
       return user.email === adminEmail;
     },
   },
