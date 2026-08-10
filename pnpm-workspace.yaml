@@ -5,3 +5,6 @@ allowBuilds:
   esbuild: true
   sharp: true
   unrs-resolver: true
+  cpu-features: true
+  protobufjs: true
+  ssh2: true
