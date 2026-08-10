@@ -7,6 +7,18 @@ import * as path from "path";
 
 const docker = new Dockerode({ socketPath: "/var/run/docker.sock" });
 const ARTIFACTS_HOST_PATH = process.env.ARTIFACTS_PATH ?? "/var/lib/velour/artifacts";
+const SITES_HOST_PATH = process.env.SITES_PATH ?? "/var/lib/velour/sites";
+
+function pullImage(image: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    docker.pull(image, (err: Error | null, stream: NodeJS.ReadableStream) => {
+      if (err) return reject(err);
+      docker.modem.followProgress(stream, (err: Error | null) => {
+        if (err) reject(err); else resolve();
+      });
+    });
+  });
+}
 const BUILD_TIMEOUT_MS = 10 * 60 * 1000;
 
 type DB = ReturnType<typeof getDb>;
@@ -67,6 +79,7 @@ export async function runBuild(deploymentId: string) {
 
   try {
     await fs.mkdir(artifactDir, { recursive: true });
+    await pullImage("node:22-alpine");
 
     // Isolated per-build bridge network (internet access, no control-plane)
     buildNet = await docker.createNetwork({
@@ -166,6 +179,12 @@ export async function runBuild(deploymentId: string) {
         finishedAt: new Date(),
       })
       .where(eq(deployments.id, deploymentId));
+
+    // Point slug → this deployment's artifacts so Caddy can serve it
+    await fs.mkdir(SITES_HOST_PATH, { recursive: true });
+    const siteLinkPath = path.join(SITES_HOST_PATH, project.slug);
+    try { await fs.unlink(siteLinkPath); } catch {}
+    await fs.symlink(artifactDir, siteLinkPath);
 
     await log(db, deploymentId, `=== Deployment is live ===`);
   } catch (err) {

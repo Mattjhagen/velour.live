@@ -63,11 +63,12 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-velour}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-velour}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       ARTIFACTS_PATH: /var/lib/velour/artifacts
+      SITES_PATH: /var/lib/velour/sites
     volumes:
       # Docker socket — worker control plane only; never granted to user workloads
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      # Artifact storage: fixed host path, not user-controllable
-      - /var/lib/velour/artifacts:/var/lib/velour/artifacts
+      # Shared velour data dir: artifacts written here, sites symlinked here
+      - /var/lib/velour:/var/lib/velour
     networks:
       - control-plane
     depends_on:
@@ -81,11 +82,14 @@ services:
     image: caddy:2-alpine
     ports:
       - "80:80"
-      # 443 added in Step 4 when wildcard TLS is configured
+      - "443:443"
+      - "443:443/udp"
     volumes:
       - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+      # Serve static sites read-only; symlinks resolve within this same mount
+      - /var/lib/velour:/var/lib/velour:ro
     networks:
       - ingress
     depends_on:
