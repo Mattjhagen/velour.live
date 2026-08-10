@@ -71,7 +71,7 @@ export const environmentVariables = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [unique().on(t.projectId, t.key)],
+  (t) => ({ uniqProjectKey: unique().on(t.projectId, t.key) }),
 );
 
 export type User = typeof users.$inferSelect;
