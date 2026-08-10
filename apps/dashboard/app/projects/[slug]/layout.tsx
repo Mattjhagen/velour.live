@@ -34,7 +34,17 @@ export default async function ProjectLayout({ children, params }: Props) {
           ← Projects
         </Link>
         <h1 className="mt-1 text-xl font-semibold text-zinc-900">{project.name}</h1>
-        <p className="mt-0.5 font-mono text-xs text-zinc-400">{project.slug}.velour.live</p>
+        <a
+          href={`https://${project.slug}.velour.live`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="mt-0.5 inline-flex items-center gap-1 font-mono text-xs text-violet-500 hover:text-violet-700 hover:underline"
+        >
+          {project.slug}.velour.live
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-3 w-3 opacity-70">
+            <path d="M4.5 2.5H2a1 1 0 0 0-1 1v6.5a1 1 0 0 0 1 1h6.5a1 1 0 0 0 1-1V7M7 1h4m0 0v4m0-4L5 7" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </a>
 
         {/* Tab bar */}
         <nav className="mt-4 flex gap-0">

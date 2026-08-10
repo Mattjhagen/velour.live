@@ -41,6 +41,8 @@ export default async function DeploymentDetailPage({ params }: Props) {
     .orderBy(asc(buildLogs.createdAt));
 
   const isTerminal = TERMINAL.has(deployment.state);
+  const isLive = deployment.state === "live";
+  const siteUrl = `https://${project.slug}.velour.live`;
 
   return (
     <div className="space-y-6">
@@ -51,6 +53,23 @@ export default async function DeploymentDetailPage({ params }: Props) {
         </div>
         <Badge state={deployment.state} />
       </div>
+
+      {isLive && (
+        <a
+          href={siteUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center justify-between rounded-lg border border-violet-200 bg-violet-50 px-5 py-4 transition-colors hover:bg-violet-100"
+        >
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-violet-500">Live at</p>
+            <p className="mt-0.5 font-mono text-base font-semibold text-violet-700">{siteUrl}</p>
+          </div>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-5 w-5 text-violet-500">
+            <path d="M6 3H3a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-3M9 1h6m0 0v6m0-6L7 9" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+        </a>
+      )}
 
       <div className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm">
         <dl className="grid grid-cols-2 gap-3 text-sm">
