@@ -117,6 +117,11 @@ export async function runContainerApp(deploymentId: string): Promise<void> {
     // 6. Update Caddy to route traffic to this container
     await syncCaddyRoutes({ slug: project.slug, port: project.containerPort });
     await log(db, deploymentId, `=== Container app is live ===`);
+
+    // 7. Stream runtime logs in the background (fire-and-forget; does not block queue loop)
+    streamRuntimeLogs(db, deploymentId, containerName).catch((err) => {
+      console.error(`Runtime log streaming failed for ${containerName}:`, err);
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     await log(db, deploymentId, `ERROR: ${msg}`);
@@ -276,4 +281,49 @@ async function setFailed(db: DB, deploymentId: string, reason: string) {
   await db.update(deployments)
     .set({ state: "failed", updatedAt: new Date(), finishedAt: new Date() })
     .where(eq(deployments.id, deploymentId));
+}
+
+// Tail running container logs into build_logs so the dashboard can show them.
+// Runs until the container exits or the stream errors. Prefixes each line with
+// "[runtime]" to distinguish from build-phase output.
+async function streamRuntimeLogs(
+  db: DB,
+  deploymentId: string,
+  containerName: string,
+): Promise<void> {
+  // Brief delay to let the container fully start before we attach
+  await new Promise<void>((r) => setTimeout(r, 2000));
+
+  try {
+    const container = docker.getContainer(containerName);
+    const stream = await container.logs({
+      follow: true,
+      stdout: true,
+      stderr: true,
+      timestamps: false,
+      since: Math.floor(Date.now() / 1000),
+    });
+
+    const buf = { out: "", err: "" };
+    const flush = async (key: "out" | "err") => {
+      const lines = buf[key].split("\n");
+      buf[key] = lines.pop() ?? "";
+      for (const l of lines) {
+        if (l.trim()) await log(db, deploymentId, `[runtime] ${l}`);
+      }
+    };
+
+    docker.modem.demuxStream(
+      stream,
+      { write: (chunk: Buffer) => { buf.out += chunk.toString(); flush("out").catch(() => {}); } },
+      { write: (chunk: Buffer) => { buf.err += chunk.toString(); flush("err").catch(() => {}); } },
+    );
+
+    await new Promise<void>((resolve) => {
+      stream.on("end", resolve);
+      stream.on("error", () => resolve());
+    });
+  } catch {
+    // Container may have been replaced by a newer deployment — that's fine
+  }
 }

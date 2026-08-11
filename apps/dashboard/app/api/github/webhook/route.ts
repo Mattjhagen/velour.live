@@ -1,25 +1,32 @@
 import { type NextRequest, NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
 import { getRedis } from "@/lib/redis";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { projects, deployments } from "@velour/db";
 import { eq, and } from "drizzle-orm";
 import { verifyWebhookSignature } from "@/lib/github";
 
 // POST /api/github/webhook?project=<slug>
-// GitHub sends push events here. We verify the signature, deduplicate by
-// commit SHA, and enqueue exactly one deployment per unique commit.
 export async function POST(req: NextRequest) {
   const slug = req.nextUrl.searchParams.get("project");
   if (!slug) return NextResponse.json({ error: "missing project param" }, { status: 400 });
 
-  // Read raw body for signature verification (must happen before any parsing)
+  // Rate limit: 20 webhook deliveries per minute per project slug
+  const rl = await checkRateLimit(`webhook:${slug}`, 20, 60);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "rate limit exceeded" }, {
+      status: 429,
+      headers: { "Retry-After": "60" },
+    });
+  }
+
+  // Read raw body before any parsing — required for HMAC verification
   const rawBody = await req.text();
 
   const event = req.headers.get("x-github-event");
   const delivery = req.headers.get("x-github-delivery");
   const signature = req.headers.get("x-hub-signature-256");
 
-  // We only care about push events
   if (event !== "push") {
     return NextResponse.json({ ok: true, skipped: "non-push event" });
   }
@@ -41,6 +48,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid signature" }, { status: 401 });
   }
 
+  // Delivery ID deduplication — reject replays within 24 hours
+  if (delivery) {
+    const deliveryKey = `velour:delivery:${delivery}`;
+    const claimed = await getRedis().set(deliveryKey, "1", "EX", 86400, "NX");
+    if (!claimed) {
+      return NextResponse.json({ ok: true, skipped: "duplicate delivery ID" });
+    }
+  }
+
   let payload: { ref?: string; after?: string; head_commit?: { id?: string } };
   try {
     payload = JSON.parse(rawBody);
@@ -48,7 +64,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid JSON" }, { status: 400 });
   }
 
-  // Only deploy pushes to the default branch (refs/heads/main or refs/heads/master)
   const ref = payload.ref ?? "";
   if (!ref.startsWith("refs/heads/")) {
     return NextResponse.json({ ok: true, skipped: "non-branch push" });
@@ -59,7 +74,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, skipped: "branch deletion" });
   }
 
-  // Deduplicate: reject if a deployment for this project+commitSha already exists
+  // DB-level deduplication: same project + same commit SHA
   const existing = await db
     .select({ id: deployments.id })
     .from(deployments)
@@ -67,7 +82,7 @@ export async function POST(req: NextRequest) {
     .limit(1);
 
   if (existing.length) {
-    return NextResponse.json({ ok: true, skipped: "duplicate delivery", deploymentId: existing[0].id });
+    return NextResponse.json({ ok: true, skipped: "commit already deployed", deploymentId: existing[0].id });
   }
 
   const queueType = project.projectType === "container" ? "container-build" : "build";

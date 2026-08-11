@@ -6,8 +6,9 @@ export const dynamic = "force-dynamic";
 
 export async function GET() {
   const [postgres, redis] = await Promise.all([pingDb(), pingRedis()]);
-  const status = postgres && redis ? "ok" : "degraded";
-  return NextResponse.json({ status, postgres, redis }, {
-    status: status === "ok" ? 200 : 503,
+  const ok = postgres && redis;
+  // Return only overall status — per-service breakdown is internal operational info
+  return NextResponse.json({ status: ok ? "ok" : "degraded" }, {
+    status: ok ? 200 : 503,
   });
 }

@@ -78,15 +78,11 @@ const resolved = path.resolve("/src", outputDir);
 if (!resolved.startsWith("/src/")) throw new Error("outputDir escape");
 ```
 
-### 4. Webhook replay attacks
+### 4. Webhook replay attacks ✅ FIXED
 
-**Finding:** `X-GitHub-Delivery` is logged but not persisted. A delivery ID that
-is replayed after the deduplication window (currently: if the commitSha already
-has a deployment) could create duplicate deployments if the same commit is
-re-pushed by force-push.
-
-**Recommendation:** Store `deliveryId` in a Redis set with a 24-hour TTL and
-reject duplicates before hitting the database.
+`X-GitHub-Delivery` is now stored as `velour:delivery:{id}` in Redis with a
+24-hour TTL using `SET … EX 86400 NX`. Replays are rejected before the DB is
+touched. DB-level dedup on `(projectId, commitSha)` remains as a second layer.
 
 ### 5. Caddy wildcard serving unverified slugs
 
@@ -114,60 +110,45 @@ path.
 **Recommendation:** Add a `velour secrets rotate` CLI command that re-encrypts
 all `environment_variables` rows with a new key before updating the env var.
 
-### 7. Rate limiting absent
+### 7. Rate limiting ✅ FIXED
 
-**Finding:** No rate limit on `POST /api/projects/*/deployments`,
-`POST /api/github/webhook`, or auth callbacks. An attacker with a valid session
-could queue thousands of builds, exhausting disk and CPU.
+Redis fixed-window counters in `lib/rate-limit.ts`:
+- `POST /api/github/webhook`: 20/min per project slug
+- `POST /api/projects/*/deployments`: 10/min per user ID
+Both return `429` with `Retry-After: 60` when exceeded.
 
-**Recommendation:** Add Next.js middleware rate limiting (e.g. `rate-limiter-flexible`
-with Redis backend) — 10 deploys/minute per user, 5 webhook deliveries/minute
-per project.
+### 8. Build log injection ✅ FIXED
 
-### 8. Build log injection
+`log()` in both `build.ts` and `container.ts` strips ANSI escape codes,
+removes non-printable characters, and truncates to 4 096 chars before DB insert.
 
-**Finding:** `log()` strips ANSI and non-printable characters. However, very
-long lines (> 64 KB) are not truncated before DB insertion, which could bloat
-the `build_logs` table.
+### 9. Missing `finishedAt` on rollback ✅ FIXED
 
-**Recommendation:** Truncate lines at 4 096 characters in `log()`.
-
-### 9. Missing `finishedAt` on rollback
-
-**Finding:** `rollbackDeployment` sets a deployment to `live` but does not set
-`finishedAt`. The field is used for display in the dashboard.
-
-**Recommendation:** Set `finishedAt: new Date()` when promoting a rolled-back
-deployment to live.
+`rollbackDeployment` now sets `finishedAt: new Date()` when promoting a
+deployment to `live`.
 
 ---
 
 ## P4 — Low
 
-### 10. Health endpoint leaks dependency status
+### 10. Health endpoint leaks dependency status ✅ FIXED
 
-**Finding:** `GET /api/health` returns `{ postgres: bool, redis: bool }` with no
-authentication. An attacker can determine which backing services are down.
+`GET /api/health` now returns only `{ status: "ok" | "degraded" }`. Per-service
+detail has been removed from the public response.
 
-**Recommendation:** Either add an internal-only header check, or remove the
-per-service breakdown from the public response.
+### 11. NEXTAUTH_SECRET not validated at startup ✅ FIXED
 
-### 11. NEXTAUTH_SECRET not validated at startup
+`apps/dashboard/instrumentation.ts` registers a startup hook that throws if any
+of `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `VELOUR_ENCRYPTION_KEY`, `DATABASE_URL`,
+`REDIS_URL`, `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, or `VELOUR_ADMIN_EMAIL`
+is missing. The process will not start.
 
-**Finding:** If `NEXTAUTH_SECRET` is missing, Next-Auth falls back to a derived
-secret in some versions. Sessions may be valid across deployments unintentionally.
+### 12. Container app log streaming ✅ FIXED
 
-**Recommendation:** Add a startup assertion: `if (!process.env.NEXTAUTH_SECRET) throw`.
-
-### 12. Container app log streaming not implemented
-
-**Finding:** `runContainerApp` writes build logs during the clone/install phase
-but does not stream runtime logs from the running container. The dashboard shows
-nothing after `=== Container app is live ===`.
-
-**Recommendation:** Implement a periodic log collector in the worker that reads
-`container.logs({ follow: true })` and writes to `build_logs` (or a new
-`runtime_logs` table).
+`streamRuntimeLogs()` in `container.ts` attaches to the running container's
+stdout/stderr via `container.logs({ follow: true })` after the container goes
+live and writes each line to `build_logs` with a `[runtime]` prefix. Runs as
+a detached async task so it never blocks the queue loop.
 
 ---
 

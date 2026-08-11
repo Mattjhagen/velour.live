@@ -1,128 +1,65 @@
-# Velour — Tomorrow's Work
+# Velour — Work Log
 
-## Immediate: Verify Step 2 Deploy
+## Completed
 
-The migrations-path fix was just committed but not yet confirmed working on the R510.
-
+### Step 2 — Verify Deploy (pending R510 confirmation)
 - [ ] On R510: `git pull && docker compose up -d --build`
 - [ ] Check logs: `docker compose logs dashboard --tail 30`
-  - Look for: migration success (no "Can't find meta/_journal.json" error)
-  - Look for: `✓ Ready` with no unhandledRejection
-- [ ] Confirm health endpoint still passes: `curl -s http://100.103.3.35/api/health`
-  - Expected: `{"status":"ok","postgres":true,"redis":true}`
+- [ ] Confirm health endpoint: `curl -s http://100.103.3.35/api/health`
+  - Expected: `{"status":"ok"}`
+
+### Steps 3–8 ✅
+All implemented. See `docs/security-review.md` and `docs/runbook.md`.
 
 ---
 
-## Step 3 — Static-Site Deployment Worker
+## Security Hardening (in progress)
 
-Build the core of Velour: accept a zip/tarball of a built static site, unpack it,
-serve it from Caddy, track state through the deployment machine.
+### ✅ Webhook replay protection
+- Delivery ID stored in Redis with 24h TTL — replays rejected before DB hit.
 
-### Plan (propose before implementing)
+### ✅ Rate limiting
+- `/api/github/webhook`: 20/min per project slug (Redis fixed-window)
+- `/api/projects/*/deployments` POST: 10/min per user session
 
-- API route `POST /api/projects/:slug/deploy` — accepts multipart upload or GitHub ref
-- Worker spawns an **ephemeral, unprivileged** Docker container:
-  - Non-root user, read-only root filesystem
-  - CPU limit: 0.5 cores, memory: 256 MB, pids: 64
-  - No network access during build (static sites don't need it)
-  - 5-minute build timeout; killed if exceeded
-- Deployment state transitions: `queued → building → deploying → live`
-  - On any failure: transition to `failed`, persist error in `build_logs`
-- Build logs streamed line-by-line to `build_logs` table (for later SSE endpoint)
-- On success: atomically swap the Caddy serve root for the slug
-- Rollback: re-point Caddy to the previous artifact
+### ✅ Health endpoint
+- `/api/health` returns `{"status":"ok"|"degraded"}` only — no per-service breakdown.
 
-### Containment controls to state before implementing
+### ✅ Startup env var validation
+- `instrumentation.ts` throws on startup if any required variable is missing.
 
-Per CLAUDE.md rules, write down the threat model and containment controls
-before any public routing or execution code lands.
+### ✅ Container runtime log streaming
+- Worker tails running container stdout/stderr into `build_logs` with `[runtime]` prefix.
 
----
-
-## Step 4 — Caddy Routing & Wildcard TLS
-
-Route `<slug>.velour.live` → correct deployment artifact.
-
-- [ ] Obtain a wildcard cert for `*.velour.live` via Caddy + ACME DNS challenge
-  - Decide DNS provider (Cloudflare recommended — has native Caddy plugin)
-  - Add `CLOUDFLARE_API_TOKEN` (or equivalent) to `.env` and `compose.yaml`
-- [ ] Caddyfile: `*.velour.live { ... }` with `header_upstream Host {labels.2}`
-- [ ] Slug validation enforced at routing layer (reserved words, format regex)
-- [ ] Test: deploy a hello-world static site, verify it appears at `<slug>.velour.live`
-- [ ] Test: reserved slug (`api`, `dashboard`, etc.) is rejected, not routed
+### ✅ compose.yaml hardening
+- Caddy added to `control-plane` network so worker can reach Admin API.
+- Worker gets `INGRESS_NETWORK`, `CADDY_ADMIN_URL`, `VELOUR_DOMAIN` via environment.
+- Explicit Docker network names (`velour_ingress`, `velour_control-plane`) — no project-prefix ambiguity.
 
 ---
 
-## Step 5 — Container Web Services
+## Outstanding Security Findings (from security-review.md)
 
-Support Dockerfile-based deployments (not just static sites).
+### P1 — Needs infrastructure decision before implementing
+- **Docker socket proxy**: Replace raw socket mount with `tecnativa/docker-socket-proxy`.
+  Requires compose.yaml change + worker config to point at proxy.
+- **SSRF / metadata IP block**: Add iptables rule to deny 169.254.169.254 from build networks.
+  Requires R510 host-level config or `docker network create --opt com.docker.network.bridge.inhibit_snat=true`.
 
-- [ ] Detect `Dockerfile` in uploaded repo
-- [ ] Build image inside a builder container (Docker-in-Docker **not** allowed —
-      use Buildah or Kaniko rootless instead)
-- [ ] Run result as non-root, with CPU/memory/pids/tmpfs limits
-- [ ] No host networking, no Docker socket, no privileged mode
-- [ ] Reverse-proxy from Caddy slug route → container internal port
-- [ ] Health-check loop before marking deployment `live`
-- [ ] Stop old container after new one is healthy (zero-downtime swap)
+### P2 — Done ✅ (delivery ID dedup)
 
----
+### P3 — Done ✅ (rate limiting)
 
-## Step 6 — GitHub App Integration
-
-Trigger deployments automatically on push.
-
-- [ ] Create GitHub App (not OAuth App) — install on user's repo
-- [ ] Webhook endpoint `POST /api/webhooks/github`
-  - Verify `X-Hub-Signature-256` — **reject anything that doesn't verify**
-  - Accept only `push` events to the configured default branch
-- [ ] Pin deployment to exact commit SHA (never deploy "latest")
-- [ ] Store GitHub App private key encrypted with `VELOUR_ENCRYPTION_KEY`
-- [ ] Tests: webhook signature verification (valid, invalid, missing, replay)
+### P4 — Done ✅ (health endpoint, startup validation, runtime logs)
 
 ---
 
-## Step 7 — Production Security Review
+## Nice-to-Have / Future
 
-- [ ] Run `docker compose config` — confirm no service exposes a host port except Caddy 80/443
-- [ ] Confirm Postgres and Redis have no published ports
-- [ ] Audit all `environment:` blocks — no secrets visible in `docker inspect`
-  - Use Docker secrets or env-file mounts instead of plain env vars if possible
-- [ ] Review Next.js API routes — every route must call `getServerSession` and
-      scope all DB queries to `session.user.id`
-- [ ] Dependency audit: `pnpm audit --prod`
-- [ ] Check CSP headers in Caddyfile
-
----
-
-## Step 8 — R510 Server Rollout Runbook
-
-Write a repeatable, idempotent runbook for bringing up Velour on a fresh server.
-
-- [ ] Prerequisites section (Docker, git, Tailscale, ports 80/443 open)
-- [ ] Clone, `.env` population, `docker compose up -d`
-- [ ] DNS setup (Cloudflare A record, wildcard CNAME)
-- [ ] First-login walkthrough (GitHub OAuth → admin email guard)
-- [ ] Backup strategy for Postgres volume
-- [ ] Upgrade procedure: `git pull && docker compose up -d --build`
-- [ ] Rollback procedure: `docker compose down && git checkout <prev-sha> && docker compose up -d --build`
-
----
-
-## Deferred / Nice-to-Have
-
-- Dashboard UI: project list, deployment history, log viewer (SSE stream)
-- Environment variable UI: encrypt on save, never expose plaintext in API responses
-- Custom domain support: user brings their own domain, Caddy gets-cert for it
+- Docker socket proxy (P1 security)
+- Metadata IP block at iptables level (P1 security)
+- Encryption key rotation CLI (`velour secrets rotate`)
+- Custom domain UI: user brings own domain, Caddy gets cert for it
 - Usage limits per project (disk, bandwidth, request rate)
-- Multi-project isolation tests: confirm project A cannot read project B's files
-
----
-
-## Notes
-
-- All commands must be labeled **[MAC]** or **[R510]**
-- Never expose R510 publicly — Tailscale IP `100.103.3.35` only for admin
-- Caddy is the only public ingress — Postgres/Redis must never have host ports
-- Workloads run as non-root with bounded CPU, memory, pids, and disk
-- Deployment state machine: `queued → building → (failed|deploying) → live → (stopped|rolled_back)`
+- Multi-project isolation tests: confirm project A cannot read project B files
+- SSE log streaming endpoint for live build log tail in dashboard

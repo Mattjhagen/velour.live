@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/db";
 import { getRedis } from "@/lib/redis";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { projects, deployments } from "@velour/db";
 import { eq, and, desc } from "drizzle-orm";
 
@@ -35,6 +36,15 @@ export async function GET(_req: Request, { params }: { params: Promise<{ slug: s
 export async function POST(req: Request, { params }: { params: Promise<{ slug: string }> }) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Rate limit: 10 manual deploys per minute per user
+  const rl = await checkRateLimit(`deploy:${session.user.id}`, 10, 60);
+  if (!rl.allowed) {
+    return NextResponse.json({ error: "rate limit exceeded" }, {
+      status: 429,
+      headers: { "Retry-After": "60" },
+    });
+  }
 
   const { slug } = await params;
   const project = await getProject(slug, session.user.id);

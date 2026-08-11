@@ -64,6 +64,11 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       ARTIFACTS_PATH: /var/lib/velour/artifacts
       SITES_PATH: /var/lib/velour/sites
+      # Explicit Docker network name for user app containers (must match network.name below)
+      INGRESS_NETWORK: velour_ingress
+      # Caddy Admin API — reachable because caddy is on control-plane network
+      CADDY_ADMIN_URL: http://caddy:2019
+      VELOUR_DOMAIN: ${VELOUR_DOMAIN:-velour.live}
     volumes:
       # Docker socket — worker control plane only; never granted to user workloads
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -89,6 +94,7 @@ services:
       - /var/lib/velour:/var/lib/velour:ro
     networks:
       - ingress
+      - control-plane  # allows worker to reach Admin API at caddy:2019
     depends_on:
       - dashboard
     restart: unless-stopped
@@ -105,8 +111,10 @@ services:
 networks:
   control-plane:
     internal: true
+    name: velour_control-plane
   ingress:
-  # build-net is created per-deployment by the worker; not a compose network
+    name: velour_ingress
+    # build networks are created per-deployment by the worker; not declared here
 
 volumes:
   postgres-data:
