@@ -4,10 +4,10 @@ import { deployments, projects, buildLogs } from "@velour/db";
 import { eq, and } from "drizzle-orm";
 import * as fs from "fs/promises";
 import * as path from "path";
+import { relinkSlug } from "./caddy";
 
 const docker = new Dockerode({ socketPath: "/var/run/docker.sock" });
 const ARTIFACTS_HOST_PATH = process.env.ARTIFACTS_PATH ?? "/var/lib/velour/artifacts";
-const SITES_HOST_PATH = process.env.SITES_PATH ?? "/var/lib/velour/sites";
 
 function pullImage(image: string): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -55,12 +55,13 @@ export async function runBuild(deploymentId: string) {
   await log(db, deploymentId, `Command: ${project.buildCommand}`);
   await log(db, deploymentId, `Output:  ${project.outputDir}`);
 
-  // Validate output dir is not a traversal attempt
-  const safeOutputDir = project.outputDir.replace(/\.\./g, "").replace(/^\//, "");
-  if (!safeOutputDir) {
-    await setFailed(db, deploymentId, "Invalid output directory");
+  // Validate outputDir is contained within /src (path containment check)
+  const resolved = path.posix.resolve("/src", project.outputDir);
+  if (!resolved.startsWith("/src/") && resolved !== "/src") {
+    await setFailed(db, deploymentId, "Invalid output directory (path traversal attempt)");
     return;
   }
+  const srcPath = resolved === "/src" ? "/src" : resolved;
 
   const buildScript = [
     "set -e",
@@ -69,7 +70,7 @@ export async function runBuild(deploymentId: string) {
     "cd /src",
     project.buildCommand,
     `mkdir -p /artifacts`,
-    `cp -rL "/src/${safeOutputDir}/." /artifacts/`,
+    `cp -rL "${srcPath}/." /artifacts/`,
     `echo '=== Build complete ==='`,
   ].join(" && ");
 
@@ -156,35 +157,38 @@ export async function runBuild(deploymentId: string) {
     const info = await container.inspect();
     const exitCode = info.State.ExitCode;
 
-    if (timedOut || exitCode !== 0) {
+    if (timedOut) {
+      await setFailed(db, deploymentId, "Build timed out after 10 minutes");
+      return;
+    }
+    if (exitCode !== 0) {
       await setFailed(db, deploymentId, `Build exited with code ${exitCode}`);
       return;
     }
 
-    // Mark previous live deployment as rolled_back
-    await db.update(deployments)
-      .set({ state: "rolled_back", updatedAt: new Date() })
-      .where(
-        and(
-          eq(deployments.projectId, deployment.projectId),
-          eq(deployments.state, "live"),
-        ),
-      );
+    // Atomically roll back the current live deployment and promote this one.
+    await db.transaction(async (tx) => {
+      await tx.update(deployments)
+        .set({ state: "rolled_back", updatedAt: new Date() })
+        .where(
+          and(
+            eq(deployments.projectId, deployment.projectId),
+            eq(deployments.state, "live"),
+          ),
+        );
 
-    await db.update(deployments)
-      .set({
-        state: "live",
-        artifactPath: artifactDir,
-        updatedAt: new Date(),
-        finishedAt: new Date(),
-      })
-      .where(eq(deployments.id, deploymentId));
+      await tx.update(deployments)
+        .set({
+          state: "live",
+          artifactPath: artifactDir,
+          updatedAt: new Date(),
+          finishedAt: new Date(),
+        })
+        .where(eq(deployments.id, deploymentId));
+    });
 
     // Point slug → this deployment's artifacts so Caddy can serve it
-    await fs.mkdir(SITES_HOST_PATH, { recursive: true });
-    const siteLinkPath = path.join(SITES_HOST_PATH, project.slug);
-    try { await fs.unlink(siteLinkPath); } catch {}
-    await fs.symlink(artifactDir, siteLinkPath);
+    await relinkSlug(project.slug, artifactDir);
 
     await log(db, deploymentId, `=== Deployment is live ===`);
   } catch (err) {
@@ -202,10 +206,11 @@ export async function runBuild(deploymentId: string) {
 }
 
 async function log(db: DB, deploymentId: string, line: string) {
-  // Strip ANSI escape codes and non-printable chars
+  // Strip ANSI codes and non-printable chars; truncate to prevent table bloat
   const clean = line
     .replace(/\x1b\[[0-9;]*[mGKHF]/g, "")
-    .replace(/[^\x09\x0a\x0d\x20-\x7e]/g, "");
+    .replace(/[^\x09\x0a\x0d\x20-\x7e]/g, "")
+    .slice(0, 4096);
   if (!clean.trim()) return;
   try {
     await db.insert(buildLogs).values({ deploymentId, line: clean });

@@ -5,7 +5,9 @@ import { projects, deployments, type DeploymentState } from "@velour/db";
 // Valid state transitions — any transition not listed here is rejected.
 const ALLOWED_TRANSITIONS: Record<DeploymentState, DeploymentState[]> = {
   queued:      ["building", "failed"],
-  building:    ["failed", "deploying"],
+  // Worker promotes building → live directly (atomic: rolls back previous live and promotes new).
+  // building → deploying is reserved for future multi-step deployments (e.g., CDN upload).
+  building:    ["failed", "deploying", "live"],
   failed:      [],
   deploying:   ["live", "failed"],
   live:        ["stopped", "rolled_back"],

@@ -46,7 +46,7 @@ export default async function DomainsPage({ params }: Props) {
 
       {/* Notice */}
       <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-        <strong>Step 4 pending:</strong> Automatic TLS via Caddy wildcard cert will be wired up in the next milestone. Domains added here are stored but not yet routed.
+        Custom domains are stored and available for DNS configuration. Wildcard TLS is handled by Caddy using DNS-01 challenge — see <code className="font-mono">infra/caddy/Caddyfile.prod</code>. Custom domain Caddy routing requires a manual config addition after DNS verification.
       </div>
 
       {/* Domain list */}

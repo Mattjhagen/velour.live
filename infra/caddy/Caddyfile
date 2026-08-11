@@ -1,6 +1,8 @@
 {
   # TLS is terminated at Cloudflare's edge — Caddy operates HTTP-only internally.
   auto_https off
+  # Bind admin API on all interfaces so the worker can reach it from control-plane network.
+  admin 0.0.0.0:2019
 }
 
 # Main domain → dashboard

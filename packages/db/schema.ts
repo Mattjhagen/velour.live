@@ -4,6 +4,7 @@ import {
   uuid,
   text,
   boolean,
+  integer,
   timestamp,
   unique,
 } from "drizzle-orm/pg-core";
@@ -17,6 +18,8 @@ export const deploymentStateEnum = pgEnum("deployment_state", [
   "stopped",
   "rolled_back",
 ]);
+
+export const projectTypeEnum = pgEnum("project_type", ["static", "container"]);
 
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -34,6 +37,9 @@ export const projects = pgTable("projects", {
   repoUrl: text("repo_url"),
   buildCommand: text("build_command").notNull().default("npm install && npm run build"),
   outputDir: text("output_dir").notNull().default("dist"),
+  projectType: projectTypeEnum("project_type").notNull().default("static"),
+  containerPort: integer("container_port").notNull().default(3000),
+  githubWebhookSecret: text("github_webhook_secret"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -84,3 +90,4 @@ export type Deployment = typeof deployments.$inferSelect;
 export type BuildLog = typeof buildLogs.$inferSelect;
 export type EnvironmentVariable = typeof environmentVariables.$inferSelect;
 export type DeploymentState = (typeof deploymentStateEnum.enumValues)[number];
+export type ProjectType = (typeof projectTypeEnum.enumValues)[number];

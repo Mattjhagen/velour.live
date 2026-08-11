@@ -10,6 +10,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { validateSlug } from "@/lib/slug";
 import { encrypt } from "@/lib/crypto";
+import { generateWebhookSecret } from "@/lib/github";
 
 async function requireUser(): Promise<string> {
   const session = await getServerSession(authOptions);
@@ -190,7 +191,11 @@ export async function triggerDeployment(slug: string): Promise<void> {
     .values({ projectId: project.id, commitSha: "manual", state: "queued" })
     .returning({ id: deployments.id });
 
-  await getRedis().rpush("velour:deploy:queue", JSON.stringify({ deploymentId: created.id }));
+  const queueType = project.projectType === "container" ? "container-build" : "build";
+  await getRedis().rpush(
+    "velour:deploy:queue",
+    JSON.stringify({ type: queueType, deploymentId: created.id }),
+  );
   revalidatePath(`/projects/${slug}`);
 }
 
@@ -205,16 +210,86 @@ export async function rollbackDeployment(slug: string, deploymentId: string): Pr
     .where(and(eq(deployments.id, deploymentId), eq(deployments.projectId, project.id)))
     .limit(1);
   if (!target) return;
+  // Static sites need an artifact path to restore the symlink
+  if (project.projectType === "static" && !target.artifactPath) return;
 
-  await db
-    .update(deployments)
-    .set({ state: "rolled_back", updatedAt: new Date() })
-    .where(and(eq(deployments.projectId, project.id), eq(deployments.state, "live")));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(deployments)
+      .set({ state: "rolled_back", updatedAt: new Date() })
+      .where(and(eq(deployments.projectId, project.id), eq(deployments.state, "live")));
 
-  await db
-    .update(deployments)
-    .set({ state: "live", updatedAt: new Date() })
-    .where(eq(deployments.id, deploymentId));
+    await tx
+      .update(deployments)
+      .set({ state: "live", updatedAt: new Date(), finishedAt: new Date() })
+      .where(eq(deployments.id, deploymentId));
+  });
+
+  // For static sites, enqueue a symlink update so Caddy serves the correct artifacts.
+  // For container apps, the worker will restart the correct container on next deploy.
+  if (project.projectType === "static" && target.artifactPath) {
+    await getRedis().rpush(
+      "velour:deploy:queue",
+      JSON.stringify({ type: "relink", slug: project.slug, artifactPath: target.artifactPath }),
+    );
+  }
 
   revalidatePath(`/projects/${slug}`);
+}
+
+// ── GitHub Webhook ─────────────────────────────────────────────────────────
+
+export async function rotateWebhookSecret(slug: string): Promise<{ secret: string } | { error: string }> {
+  const userId = await requireUser();
+  const project = await requireProject(slug, userId);
+
+  const secret = generateWebhookSecret();
+  await getDb()
+    .update(projects)
+    .set({ githubWebhookSecret: secret, updatedAt: new Date() })
+    .where(eq(projects.id, project.id));
+
+  revalidatePath(`/projects/${slug}/settings`);
+  return { secret };
+}
+
+export async function revokeWebhookSecret(slug: string): Promise<void> {
+  const userId = await requireUser();
+  const project = await requireProject(slug, userId);
+
+  await getDb()
+    .update(projects)
+    .set({ githubWebhookSecret: null, updatedAt: new Date() })
+    .where(eq(projects.id, project.id));
+
+  revalidatePath(`/projects/${slug}/settings`);
+}
+
+// ── Container settings ─────────────────────────────────────────────────────
+
+export async function updateContainerSettings(
+  slug: string,
+  _prev: { error?: string } | null,
+  formData: FormData,
+): Promise<{ error?: string }> {
+  const userId = await requireUser();
+  const project = await requireProject(slug, userId);
+
+  const projectType = (formData.get("projectType") as string | null) ?? "static";
+  if (projectType !== "static" && projectType !== "container") {
+    return { error: "Invalid project type" };
+  }
+
+  const portRaw = parseInt((formData.get("containerPort") as string | null) ?? "3000", 10);
+  if (isNaN(portRaw) || portRaw < 1 || portRaw > 65535) {
+    return { error: "Port must be between 1 and 65535" };
+  }
+
+  await getDb()
+    .update(projects)
+    .set({ projectType, containerPort: portRaw, updatedAt: new Date() })
+    .where(eq(projects.id, project.id));
+
+  revalidatePath(`/projects/${slug}/settings`);
+  return {};
 }

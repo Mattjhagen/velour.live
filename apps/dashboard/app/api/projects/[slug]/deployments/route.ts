@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getDb } from "@/lib/db";
+import { getRedis } from "@/lib/redis";
 import { projects, deployments } from "@velour/db";
 import { eq, and, desc } from "drizzle-orm";
 
@@ -46,6 +47,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ slug: s
     .insert(deployments)
     .values({ projectId: project.id, commitSha, state: "queued" })
     .returning();
+
+  // Enqueue the build job so the worker picks it up
+  const queueType = project.projectType === "container" ? "container-build" : "build";
+  await getRedis().rpush(
+    "velour:deploy:queue",
+    JSON.stringify({ type: queueType, deploymentId: deployment.id }),
+  );
 
   return NextResponse.json(deployment, { status: 201 });
 }

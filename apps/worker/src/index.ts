@@ -1,7 +1,14 @@
 import { getRedis } from "./redis";
 import { runBuild } from "./build";
+import { runContainerApp, stopContainerApp } from "./container";
+import { relinkSlug } from "./caddy";
 
 const QUEUE_KEY = "velour:deploy:queue";
+
+type QueueMessage =
+  | { type?: "build"; deploymentId: string }
+  | { type: "relink"; slug: string; artifactPath: string }
+  | { type: "container-stop"; slug: string };
 
 async function main() {
   console.log("Worker started, waiting for jobs…");
@@ -12,19 +19,38 @@ async function main() {
     if (!result) continue;
 
     const [, raw] = result;
-    let payload: { deploymentId: string };
+    let msg: QueueMessage;
     try {
-      payload = JSON.parse(raw);
+      msg = JSON.parse(raw);
     } catch {
       console.error("Invalid queue payload:", raw);
       continue;
     }
 
-    console.log("Processing deployment:", payload.deploymentId);
+    const type = (msg as { type?: string }).type ?? "build";
+
     try {
-      await runBuild(payload.deploymentId);
+      if (type === "build") {
+        const { deploymentId } = msg as { deploymentId: string };
+        console.log("Processing build:", deploymentId);
+        await runBuild(deploymentId);
+      } else if (type === "container-build") {
+        const { deploymentId } = msg as { deploymentId: string };
+        console.log("Processing container deployment:", deploymentId);
+        await runContainerApp(deploymentId);
+      } else if (type === "relink") {
+        const { slug, artifactPath } = msg as { slug: string; artifactPath: string };
+        console.log("Relinking slug:", slug, "→", artifactPath);
+        await relinkSlug(slug, artifactPath);
+      } else if (type === "container-stop") {
+        const { slug } = msg as { slug: string };
+        console.log("Stopping container for slug:", slug);
+        await stopContainerApp(slug);
+      } else {
+        console.error("Unknown queue message type:", type);
+      }
     } catch (err) {
-      console.error("Unhandled build error for", payload.deploymentId, err);
+      console.error("Unhandled error processing job:", err);
     }
   }
 }

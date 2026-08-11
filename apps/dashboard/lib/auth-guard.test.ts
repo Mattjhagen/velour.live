@@ -18,6 +18,7 @@ describe("canTransition", () => {
     ["queued",    "failed"],
     ["building",  "failed"],
     ["building",  "deploying"],
+    ["building",  "live"],    // worker promotes directly: builds and symlinks atomically
     ["deploying", "live"],
     ["deploying", "failed"],
     ["live",      "stopped"],
@@ -30,7 +31,6 @@ describe("canTransition", () => {
     ["failed",      "live"],
     ["stopped",     "live"],
     ["rolled_back", "live"],
-    ["building",    "live"],
   ];
 
   it.each(valid)("allows %s → %s", (from, to) => {

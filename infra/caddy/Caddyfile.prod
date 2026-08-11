@@ -1,0 +1,35 @@
+{
+  # DNS-01 challenge for wildcard TLS — requires Cloudflare DNS provider plugin.
+  # Build Caddy with: xcaddy build --with github.com/caddy-dns/cloudflare
+  acme_dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+  email {env.VELOUR_ACME_EMAIL}
+}
+
+# Main domain → dashboard
+velour.live, www.velour.live {
+  tls {
+    dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+  }
+  reverse_proxy dashboard:3000
+}
+
+# Slug subdomains → static site artifacts
+# The worker dynamically reloads this config via the Caddy Admin API
+# (/load endpoint) when container app routes are added or removed.
+*.velour.live {
+  tls {
+    dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+  }
+
+  root * /var/lib/velour/sites/{labels.0}
+
+  file_server {
+    hide .git
+  }
+
+  # SPA fallback
+  handle_errors 404 {
+    rewrite * /index.html
+    file_server
+  }
+}

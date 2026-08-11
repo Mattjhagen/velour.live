@@ -15,6 +15,20 @@
       "when": 1754870400000,
       "tag": "0002_project_build_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1786406400000,
+      "tag": "0003_container_support",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1786406401000,
+      "tag": "0004_github_webhook",
+      "breakpoints": true
     }
   ]
 }
