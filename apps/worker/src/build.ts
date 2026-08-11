@@ -1,12 +1,12 @@
-import Dockerode from "dockerode";
 import { getDb } from "./db";
+import { getDocker } from "./docker";
 import { deployments, projects, buildLogs } from "@velour/db";
 import { eq, and } from "drizzle-orm";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { relinkSlug } from "./caddy";
 
-const docker = new Dockerode({ socketPath: "/var/run/docker.sock" });
+const docker = getDocker();
 const ARTIFACTS_HOST_PATH = process.env.ARTIFACTS_PATH ?? "/var/lib/velour/artifacts";
 
 function pullImage(image: string): Promise<void> {
@@ -42,6 +42,12 @@ export async function runBuild(deploymentId: string) {
 
   if (!project.repoUrl) {
     await setFailed(db, deploymentId, "No repository URL set — configure it in Settings.");
+    return;
+  }
+
+  // Defense-in-depth: validate URL even if dashboard already checked it
+  if (!project.repoUrl.startsWith("https://")) {
+    await setFailed(db, deploymentId, "Repository URL must use https://");
     return;
   }
 

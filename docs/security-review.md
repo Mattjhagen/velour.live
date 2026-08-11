@@ -17,47 +17,35 @@ container escapes, Caddy routing, TLS, backup/restore, logging, rate limiting.
 
 ## P1 — Critical
 
-### 1. Docker socket exposure in worker container
+### 1. Docker socket exposure in worker container ✅ FIXED
 
-**Finding:** The worker mounts `/var/run/docker.sock`. A container escape in the
-worker (or a malicious build command) gives root on the host.
-
-**Mitigations already in place:**
-- Build containers run with `CapDrop: ALL`, `SecurityOpt: no-new-privileges`,
-  isolated per-build bridge networks with no access to `control-plane`.
-- Build containers have no bind-mount access to the Docker socket.
-- `PidsLimit: 256`, memory cap 512 MiB, CPU quota 100 %.
-
-**Remaining risk:** The worker process itself has full Docker API access. A bug
-in `build.ts` or `container.ts` that passes user-supplied data into
-`createContainer` could escalate.
-
-**Recommendation:** Run the worker behind a Docker socket proxy
-(e.g. `tecnativa/docker-socket-proxy`) that whitelists only the API methods the
-worker needs (`/containers/*`, `/networks/*`, `/images/*`, `/build`).
+The worker no longer mounts `/var/run/docker.sock` directly. Instead:
+- `docker-proxy` service (`tecnativa/docker-socket-proxy`) mounts the socket
+  and exposes a filtered TCP endpoint on `velour_docker-proxy` internal network.
+- Worker connects via `DOCKER_HOST=tcp://docker-proxy:2375`.
+- Proxy allows only `CONTAINERS`, `NETWORKS`, `IMAGES`, `POST`, `DELETE`.
+  `EXEC`, `BUILD`, `AUTH`, `SECRETS`, `SWARM` are all denied.
+- Worker can no longer call arbitrary Docker API endpoints — exec into containers,
+  access registry auth, or interact with swarm primitives.
 
 ---
 
-### 2. `repoUrl` SSRF via git clone
+### 2. `repoUrl` SSRF via git clone ✅ FIXED
 
-**Finding:** `git clone --depth 1 "${project.repoUrl}" /src` runs inside a build
-container. A repo URL like `file:///etc/passwd` or
-`http://169.254.169.254/latest/meta-data/` would be cloned from inside the
-build network, which has internet access.
+`lib/repo.ts` (`validateRepoUrl`) blocks:
+- Non-`https://` schemes (file://, http://, git@, etc.)
+- Loopback: `localhost`, `0.0.0.0`, `::1`, `127.0.0.0/8`
+- Link-local / cloud metadata: `169.254.0.0/16`
+- RFC 1918 private ranges: `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`
 
-**Mitigations in place:**
-- Build containers use an isolated bridge network separate from `control-plane`.
-- URL validation in `actions.ts` requires `https://` or `git@` prefix.
+Validation runs at save time in `actions.ts` (dashboard) and again as
+defense-in-depth in `build.ts` / `container.ts` before the git clone executes.
+`git@` SSH URLs are no longer accepted — https-only enforces that git cannot
+reach the host filesystem or SSH agent.
 
-**Remaining risk:** `git@` URLs could be used to exfiltrate SSH keys if the
-build container had them mounted (it does not). Cloud metadata endpoints
-(169.254.169.254) are reachable from the build network.
-
-**Recommendation:**
-1. Block metadata IP ranges at the Docker network level (iptables rule added in
-   `compose.yaml` or via a `docker network create --opt` no-icc rule).
-2. Validate that the host portion of `repoUrl` is a public git forge, or allow
-   an allowlist.
+**Remaining risk:** DNS rebinding (a public hostname that resolves to a private
+IP after validation). Mitigating fully requires iptables rules on the R510 host
+blocking 169.254.0.0/16 egress from Docker bridge networks — see runbook.
 
 ---
 

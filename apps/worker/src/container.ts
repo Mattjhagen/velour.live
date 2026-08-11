@@ -1,12 +1,12 @@
-import Dockerode from "dockerode";
 import { getDb } from "./db";
+import { getDocker } from "./docker";
 import { deployments, projects, buildLogs } from "@velour/db";
 import { eq, and } from "drizzle-orm";
 import * as fs from "fs/promises";
 import * as path from "path";
 import { syncCaddyRoutes } from "./caddy";
 
-const docker = new Dockerode({ socketPath: "/var/run/docker.sock" });
+const docker = getDocker();
 const ARTIFACTS_HOST_PATH = process.env.ARTIFACTS_PATH ?? "/var/lib/velour/artifacts";
 // Docker Compose prefixes network names with the project name.
 // Set INGRESS_NETWORK in your .env to match (e.g. "velour-live_ingress").
@@ -42,6 +42,12 @@ export async function runContainerApp(deploymentId: string): Promise<void> {
 
   if (!project.repoUrl) {
     await setFailed(db, deploymentId, "No repository URL set — configure it in Settings.");
+    return;
+  }
+
+  // Defense-in-depth: validate URL even if dashboard already checked it
+  if (!project.repoUrl.startsWith("https://")) {
+    await setFailed(db, deploymentId, "Repository URL must use https://");
     return;
   }
 

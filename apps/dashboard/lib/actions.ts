@@ -9,6 +9,7 @@ import { eq, and } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { validateSlug } from "@/lib/slug";
+import { validateRepoUrl } from "@/lib/repo";
 import { encrypt } from "@/lib/crypto";
 import { generateWebhookSecret } from "@/lib/github";
 
@@ -168,8 +169,9 @@ export async function updateBuildSettings(
     (formData.get("buildCommand") as string | null)?.trim() || "npm install && npm run build";
   const outputDir = (formData.get("outputDir") as string | null)?.trim() || "dist";
 
-  if (repoUrl && !repoUrl.startsWith("https://") && !repoUrl.startsWith("git@")) {
-    return { error: "Repository URL must start with https:// or git@" };
+  if (repoUrl) {
+    const v = validateRepoUrl(repoUrl);
+    if (!v.valid) return { error: v.error };
   }
 
   await getDb()

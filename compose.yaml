@@ -55,6 +55,28 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    environment:
+      # Allow only the Docker API endpoints the worker actually needs
+      CONTAINERS: 1
+      NETWORKS: 1
+      IMAGES: 1
+      POST: 1
+      DELETE: 1
+      # Block everything else (exec, build API, secrets, swarm)
+      BUILD: 0
+      EXEC: 0
+      AUTH: 0
+      SECRETS: 0
+      SERVICES: 0
+      SWARM: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-proxy
+    restart: unless-stopped
+
   worker:
     build:
       context: .
@@ -64,19 +86,21 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       ARTIFACTS_PATH: /var/lib/velour/artifacts
       SITES_PATH: /var/lib/velour/sites
+      # Route Docker API through the socket proxy — no raw socket in worker
+      DOCKER_HOST: tcp://docker-proxy:2375
       # Explicit Docker network name for user app containers (must match network.name below)
       INGRESS_NETWORK: velour_ingress
       # Caddy Admin API — reachable because caddy is on control-plane network
       CADDY_ADMIN_URL: http://caddy:2019
       VELOUR_DOMAIN: ${VELOUR_DOMAIN:-velour.live}
     volumes:
-      # Docker socket — worker control plane only; never granted to user workloads
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       # Shared velour data dir: artifacts written here, sites symlinked here
       - /var/lib/velour:/var/lib/velour
     networks:
       - control-plane
+      - docker-proxy
     depends_on:
+      - docker-proxy
       postgres:
         condition: service_healthy
       redis:
@@ -114,7 +138,10 @@ networks:
     name: velour_control-plane
   ingress:
     name: velour_ingress
-    # build networks are created per-deployment by the worker; not declared here
+  docker-proxy:
+    internal: true
+    name: velour_docker-proxy
+  # Per-build and per-cbuild networks are created dynamically by the worker
 
 volumes:
   postgres-data:
