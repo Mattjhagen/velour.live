@@ -100,7 +100,8 @@ services:
       - control-plane
       - docker-proxy
     depends_on:
-      - docker-proxy
+      docker-proxy:
+        condition: service_started
       postgres:
         condition: service_healthy
       redis:
