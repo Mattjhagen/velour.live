@@ -1,14 +1,15 @@
 import { getRedis } from "./redis";
 import { runBuild } from "./build";
 import { runContainerApp, stopContainerApp } from "./container";
-import { relinkSlug } from "./caddy";
+import { relinkSlug, unlinkSlug, syncCaddyRoutes } from "./caddy";
 
 const QUEUE_KEY = "velour:deploy:queue";
 
 type QueueMessage =
   | { type?: "build"; deploymentId: string }
   | { type: "relink"; slug: string; artifactPath: string }
-  | { type: "container-stop"; slug: string };
+  | { type: "container-stop"; slug: string }
+  | { type: "project-delete"; slug: string; projectType: string };
 
 async function main() {
   console.log("Worker started, waiting for jobs…");
@@ -46,6 +47,13 @@ async function main() {
         const { slug } = msg as { slug: string };
         console.log("Stopping container for slug:", slug);
         await stopContainerApp(slug);
+      } else if (type === "project-delete") {
+        const { slug, projectType } = msg as { slug: string; projectType: string };
+        console.log("Cleaning up deleted project:", slug);
+        if (projectType === "container") await stopContainerApp(slug);
+        await unlinkSlug(slug);
+        // Rebuild Caddy config without the deleted project's route
+        await syncCaddyRoutes().catch((err) => console.error("Caddy sync after delete failed:", err));
       } else {
         console.error("Unknown queue message type:", type);
       }

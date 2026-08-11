@@ -75,6 +75,13 @@ export async function renameProject(
 export async function deleteProject(slug: string): Promise<never> {
   const userId = await requireUser();
   const project = await requireProject(slug, userId);
+
+  // Enqueue cleanup before deleting — worker removes symlink and stops container
+  await getRedis().rpush(
+    "velour:deploy:queue",
+    JSON.stringify({ type: "project-delete", slug, projectType: project.projectType }),
+  );
+
   await getDb().delete(projects).where(eq(projects.id, project.id));
   redirect("/projects");
 }

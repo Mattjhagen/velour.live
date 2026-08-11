@@ -58,7 +58,7 @@ export function BuildSettingsForm({
           className="w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-sm outline-none focus:border-violet-500 focus:ring-1 focus:ring-violet-500"
         />
         <p className="mt-1 text-xs text-zinc-400">
-          Public HTTPS or SSH git URL. Private repos require an SSH key (Step 6).
+          Public HTTPS URL only (e.g. https://github.com/you/repo). Private IPs and SSH are not supported.
         </p>
       </div>
 

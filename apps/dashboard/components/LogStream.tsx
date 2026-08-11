@@ -56,6 +56,7 @@ export function LogStream({ deploymentId }: { deploymentId: string }) {
             <div key={i} className={
               l.startsWith("ERROR") || l.startsWith("FAILED") ? "text-red-400"
               : l.startsWith("===") ? "font-semibold text-violet-400"
+              : l.startsWith("[runtime]") ? "text-sky-400"
               : ""
             }>
               {l}
