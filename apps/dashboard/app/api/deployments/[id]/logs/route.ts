@@ -7,6 +7,13 @@ import { eq, and, asc } from "drizzle-orm";
 
 const TERMINAL = new Set(["live", "failed", "stopped", "rolled_back"]);
 
+// Stream live build/runtime logs as Server-Sent Events.
+// Poll interval backs off when no new logs arrive to reduce DB load for idle
+// container apps (1s → 5s after 30 quiet polls → 15s after 12 more).
+// Closes after MAX_DURATION_MS so the browser auto-reconnects rather than
+// holding a connection open indefinitely.
+const MAX_DURATION_MS = 10 * 60 * 1000; // 10 minutes per connection
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -34,7 +41,11 @@ export async function GET(
       const send = (line: string) =>
         controller.enqueue(enc.encode(`data: ${JSON.stringify(line)}\n\n`));
 
-      while (!closed) {
+      const deadline = Date.now() + MAX_DURATION_MS;
+      let quietPolls = 0;
+      let pollMs = 1000;
+
+      while (!closed && Date.now() < deadline) {
         const logs = await db
           .select()
           .from(buildLogs)
@@ -44,7 +55,20 @@ export async function GET(
           .limit(200);
 
         for (const l of logs) send(l.line);
-        offset += logs.length;
+
+        if (logs.length > 0) {
+          offset += logs.length;
+          quietPolls = 0;
+          pollMs = 1000; // reset back-off on new data
+        } else {
+          quietPolls++;
+          // Back off poll interval when idle to reduce DB load
+          if (quietPolls >= 42) {
+            pollMs = 15000; // ~15s after ~1 minute of quiet
+          } else if (quietPolls >= 30) {
+            pollMs = 5000;  // ~5s after ~30s of quiet
+          }
+        }
 
         const [cur] = await db
           .select({ state: deployments.state })
@@ -57,8 +81,11 @@ export async function GET(
           return;
         }
 
-        await new Promise<void>((r) => setTimeout(r, 1000));
+        await new Promise<void>((r) => setTimeout(r, pollMs));
       }
+
+      // Max duration reached or client disconnected — close cleanly
+      controller.close();
     },
     cancel() {
       closed = true;

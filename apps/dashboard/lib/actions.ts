@@ -10,7 +10,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { validateSlug } from "@/lib/slug";
 import { validateRepoUrl } from "@/lib/repo";
-import { encrypt, decrypt, encryptWithKey, decryptWithKey, validateKeyHex } from "@/lib/crypto";
+import { encrypt, encryptWithKey, decryptWithKey, validateKeyHex } from "@/lib/crypto";
 import { generateWebhookSecret } from "@/lib/github";
 
 async function requireUser(): Promise<string> {

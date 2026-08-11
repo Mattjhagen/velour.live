@@ -41,6 +41,7 @@ export default async function EnvPage({ params }: Props) {
         <EnvVarForm action={addAction} />
         <p className="mt-3 text-xs text-zinc-400">
           Values are encrypted with AES-256-GCM and never shown after saving.
+          Adding or removing variables takes effect on the next deployment.
         </p>
       </div>
 
