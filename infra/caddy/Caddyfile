@@ -6,13 +6,13 @@
 }
 
 # Main domain → dashboard
-velour.live, www.velour.live, velour.relayapp.pro {
+http://velour.live, http://www.velour.live, http://velour.relayapp.pro {
   reverse_proxy dashboard:3000
 }
 
 # Slug subdomains → static site artifacts
 # {labels.0} = "resume" in resume.velour.live
-*.velour.live {
+http://*.velour.live {
   root * /var/lib/velour/sites/{labels.0}
 
   file_server {
