@@ -6,7 +6,7 @@
 }
 
 # Main domain → dashboard
-velour.live, www.velour.live {
+velour.live, www.velour.live, velour.relayapp.pro {
   reverse_proxy dashboard:3000
 }
 
