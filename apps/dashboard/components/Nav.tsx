@@ -34,6 +34,7 @@ export function Nav({ session }: { session: Session | null }) {
       {/* Nav items */}
       <nav className="flex-1 space-y-0.5">
         <NavItem href="/projects" label="Projects" />
+        <NavItem href="/admin" label="Admin" />
       </nav>
 
       {/* User footer */}

@@ -10,7 +10,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { validateSlug } from "@/lib/slug";
 import { validateRepoUrl } from "@/lib/repo";
-import { encrypt } from "@/lib/crypto";
+import { encrypt, decrypt, encryptWithKey, decryptWithKey, validateKeyHex } from "@/lib/crypto";
 import { generateWebhookSecret } from "@/lib/github";
 
 async function requireUser(): Promise<string> {
@@ -301,4 +301,50 @@ export async function updateContainerSettings(
 
   revalidatePath(`/projects/${slug}/settings`);
   return {};
+}
+
+// ── Admin: Encryption key rotation ────────────────────────────────────────────
+
+export async function rotateEncryptionKey(
+  _prev: { error?: string; rotated?: number } | null,
+  formData: FormData,
+): Promise<{ error?: string; rotated?: number }> {
+  await requireUser(); // admin-only (dashboard is already gated to VELOUR_ADMIN_EMAIL)
+
+  const newKeyHex = ((formData.get("newKey") as string | null) ?? "").trim();
+  const v = validateKeyHex(newKeyHex);
+  if (!v.valid) return { error: v.error };
+
+  const newKey = Buffer.from(newKeyHex, "hex");
+  const oldKey = Buffer.from(process.env.VELOUR_ENCRYPTION_KEY!, "hex");
+
+  const db = getDb();
+  const rows = await db
+    .select({ id: environmentVariables.id, valueEncrypted: environmentVariables.valueEncrypted })
+    .from(environmentVariables);
+
+  if (rows.length === 0) return { rotated: 0 };
+
+  // Decrypt with old key, re-encrypt with new key
+  const updates: { id: string; valueEncrypted: string }[] = [];
+  for (const row of rows) {
+    try {
+      const plaintext = decryptWithKey(row.valueEncrypted, oldKey);
+      updates.push({ id: row.id, valueEncrypted: encryptWithKey(plaintext, newKey) });
+    } catch {
+      return { error: `Failed to decrypt env var ${row.id} — the current key may already be rotated` };
+    }
+  }
+
+  // Write all new ciphertexts atomically
+  await db.transaction(async (tx) => {
+    for (const u of updates) {
+      await tx
+        .update(environmentVariables)
+        .set({ valueEncrypted: u.valueEncrypted, updatedAt: new Date() })
+        .where(eq(environmentVariables.id, u.id));
+    }
+  });
+
+  return { rotated: updates.length };
 }
